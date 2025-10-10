@@ -11,12 +11,15 @@ from groq import Groq
 from pathlib import Path
 from typing import Optional, List, Dict
 from dataclasses import dataclass
+from pydantic import BaseModel
 
 from groq import Groq
 from openai import OpenAI, AzureOpenAI
 from azure.identity import get_bearer_token_provider, AzureCliCredential, ManagedIdentityCredential
 
 from dotenv import load_dotenv
+
+from aiopslab.orchestrator.evaluators.quantitative import count_tokens
 
 # Load environment variables from the .env file
 load_dotenv()
@@ -66,12 +69,19 @@ class Cache:
             json.dump(self.cache_dict, f, indent=4)
 
 
+class PromptItem(BaseModel):
+    prompt: list[dict[str, str]]
+    token_count: int
+
+
 class GPTClient:
     """Abstraction for OpenAI's GPT series model."""
 
-    def __init__(self, auth_type: str = "key", api_key: Optional[str] = None, azure_config_file: Optional[str] = None, use_cache: bool = True):
+    def __init__(self, auth_type: str = "key", api_key: Optional[str] = None, azure_config_file: Optional[str] = None, use_cache: bool = True, base_url: Optional[str] = None):
         self.cache = Cache()
-        self.client = self._setup_client(auth_type, api_key, azure_config_file)
+        self.client = self._setup_client(auth_type, api_key, azure_config_file, base_url)
+
+        self.extra_details: list[PromptItem] = []
 
     def _load_azure_config(self, yaml_file_path: str) -> AzureConfig:
         with open(yaml_file_path, "r") as file:
@@ -81,14 +91,19 @@ class GPTClient:
                 api_version=azure_config_data.get("api_version"),
             )
 
-    def _setup_client(self, auth_type: str, api_key: Optional[str], azure_config_file: Optional[str]):
+    def _setup_client(self, auth_type: str, api_key: Optional[str], azure_config_file: Optional[str], base_url: Optional[str]):
         azure_identity_opts = ["cli", "managed_identity"]
         if auth_type == "key":
             # TODO: support Azure OpenAI client.
             api_key = api_key or os.getenv("OPENAI_API_KEY")
+            base_url = base_url or os.getenv("OPENAI_API_URL")
+            self.model = os.getenv("MODEL") or GPT_MODEL
+
+            print(f"Creating GPT client with base_url {base_url} for model: {self.model}")
+
             if not api_key:
                 raise ValueError("API key must be provided or set in OPENAI_API_KEY environment variable")
-            return OpenAI(api_key=api_key)
+            return OpenAI(api_key=api_key, base_url=base_url)
         elif auth_type in azure_identity_opts:
             if not azure_config_file:
                 raise ValueError("Azure configuration file must be provided for access via managed identity.\n Check AIOpsLab/clients/configs/example_azure_config.yml for an example.")
@@ -120,7 +135,7 @@ class GPTClient:
         try:
             response = self.client.chat.completions.create(
                 messages=payload,  # type: ignore
-                model=GPT_MODEL,
+                model=self.model,
                 max_tokens=1024,
                 temperature=0.5,
                 top_p=0.95,
@@ -136,7 +151,22 @@ class GPTClient:
 
         return [c.message.content for c in response.choices]  # type: ignore
 
+    def clear_history(self):
+        self.extra_details = []
+
+    def get_extra_details(self):
+        max_tokens = max([item.token_count for item in self.extra_details])
+
+        return {
+            "max_tokens": max_tokens,
+            "detailed_trace": [item.model_dump() for item in self.extra_details]
+        }
+
+
     def run(self, payload: list[dict[str, str]]) -> list[str]:
+        token_count = count_tokens(payload)
+        self.extra_details.append(PromptItem(prompt=payload, token_count=token_count))
+
         response = self.inference(payload)
         if self.cache is not None:
             self.cache.add_to_cache(payload, response)

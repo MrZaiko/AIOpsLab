@@ -9,7 +9,11 @@ Paper: https://arxiv.org/abs/2210.03629
 
 import asyncio
 import json
+import os
+
 import tiktoken
+import wandb
+
 from aiopslab.orchestrator import Orchestrator
 from aiopslab.orchestrator.problems.registry import ProblemRegistry
 from clients.utils.llm import GPTClient
@@ -85,6 +89,17 @@ class Agent:
         self.history.append({"role": "system", "content": self.system_message})
         self.history.append({"role": "user", "content": self.task_message})
 
+
+    def get_extra_details(self):
+        extra_details = {
+            "full_prompt": self.llm.get_extra_details()
+        }
+
+        self.llm.clear_history()
+
+        return extra_details
+
+
     async def get_action(self, input) -> str:
         """Wrapper to interface the agent with OpsBench.
 
@@ -110,7 +125,21 @@ class Agent:
 if __name__ == "__main__":
     problems = ProblemRegistry().PROBLEM_REGISTRY
 
-    for pid in problems:
+    # Load use_wandb from environment variable with a default of False
+    use_wandb = os.getenv("USE_WANDB", "false").lower() == "true"
+
+    if use_wandb:
+        # Initialize wandb running
+        wandb.init(project="AIOpsLab", entity="sabuzakuk-epfl", id="yz9njbct", resume="allow")
+
+    id = 0
+
+    for idx, pid in enumerate(problems):
+        if "mitigation" in pid:
+            continue
+
+        break
+
         agent = Agent()
         orchestrator = Orchestrator()
         orchestrator.register_agent(agent, name="react")
@@ -128,3 +157,6 @@ if __name__ == "__main__":
 
         except Exception as e:
             print(f"Error while running problem {pid}: {e}")
+
+    if use_wandb:
+        wandb.finish()

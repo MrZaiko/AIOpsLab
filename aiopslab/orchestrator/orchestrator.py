@@ -182,6 +182,8 @@ class Orchestrator:
 
         self.session.end()
 
+        self.session.set_extra_details(self.agent.get_extra_details())
+
         # A valid submission was made (or) max_steps reached
         if env_response != SubmissionStatus.INVALID_SUBMISSION:
             results = self.session.problem.eval(

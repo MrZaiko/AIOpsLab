@@ -29,6 +29,7 @@ class Session:
         self.end_time = None
         self.agent_name = None
         self.results_dir = results_dir
+        self.extra_details = None
 
     def set_problem(self, problem, pid=None):
         """Set the problem instance for the session.
@@ -95,6 +96,9 @@ class Session:
         """End the session."""
         self.end_time = time.time()
 
+    def set_extra_details(self, extra_details):
+        self.extra_details = extra_details
+
     def get_duration(self) -> float:
         """Get the duration of the session."""
         duration = self.end_time - self.start_time
@@ -110,6 +114,7 @@ class Session:
             "end_time": self.end_time,
             "trace": [item.model_dump() for item in self.history],
             "results": self.results,
+            "extra_details": self.extra_details,
         }
 
         return summary
@@ -124,6 +129,9 @@ class Session:
 
     def to_wandb(self):
         """Log the session to Weights & Biases."""
+
+        print("Logging run to WanDB")
+
         wandb.log(self.to_dict())
 
     def from_json(self, filename: str):

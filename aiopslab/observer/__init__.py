@@ -4,6 +4,7 @@
 import pathlib
 import sys
 import pytz
+import os
 from datetime import datetime, timedelta
 
 from kubernetes import config, client
@@ -14,6 +15,9 @@ sys.path.append(root_path)
 # read the configuration file
 with open(root_path / "monitor_config.yaml", "r") as f:
     monitor_config = full_load(f)
+
+if os.getenv("KUBECONFIG"):
+    monitor_config["kubernetes_path"] = os.getenv("KUBECONFIG")
 
 
 # root_config = full_load(open(root_path / "config.yaml", "r"))

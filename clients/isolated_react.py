@@ -1,30 +1,37 @@
-"""Naive GPT4 client (with shell access) for AIOpsLab.
+"""Naive ReAct client for AIOpsLab.
 
-Achiam, Josh, Steven Adler, Sandhini Agarwal, Lama Ahmad, Ilge Akkaya, Florencia Leoni Aleman, Diogo Almeida et al. 
-"Gpt-4 technical report." arXiv preprint arXiv:2303.08774 (2023).
+Yao, S., Zhao, J., Yu, D., Du, N., Shafran, I., Narasimhan, K., & Cao, Y. (2022).
+React: Synergizing reasoning and acting in language models. arXiv preprint arXiv:2210.03629.
 
-Code: https://openai.com/index/gpt-4-research/
-Paper: https://arxiv.org/abs/2303.08774
+Code: https://github.com/ysymyth/ReAct
+Paper: https://arxiv.org/abs/2210.03629
 """
-import os
+
 import asyncio
+import json
+import os
+import argparse
+
 import tiktoken
 import wandb
+
 from aiopslab.orchestrator import Orchestrator
 from aiopslab.orchestrator.problems.registry import ProblemRegistry
 from clients.utils.llm import GPTClient
-from dotenv import load_dotenv
+from clients.utils.templates import DOCS
 
-from clients.utils.templates import DOCS_SHELL_ONLY
+RESP_INSTR = """DO NOT REPEAT ACTIONS! Respond with:
+Thought: <your thought on the previous output>
+Action: <your action towards mitigating>
+"""
 
-# Load environment variables from the .env file
-load_dotenv()
 
 def count_message_tokens(message, enc):
     # Each message format adds ~4 tokens of overhead
     tokens = 4  # <|start|>role/name + content + <|end|>
     tokens += len(enc.encode(message.get("content", "")))
     return tokens
+
 
 def trim_history_to_token_limit(history, max_tokens=120000, model="gpt-4"):
     enc = tiktoken.encoding_for_model(model)
@@ -38,9 +45,11 @@ def trim_history_to_token_limit(history, max_tokens=120000, model="gpt-4"):
 
     if last_msg_tokens > max_tokens:
         # If even the last message is too big, truncate its content
-        truncated_content = enc.decode(enc.encode(last_msg["content"])[:max_tokens - 4])
+        truncated_content = enc.decode(
+            enc.encode(last_msg["content"])[: max_tokens - 4]
+        )
         return [{"role": last_msg["role"], "content": truncated_content}]
-    
+
     trimmed.insert(0, last_msg)
     total_tokens += last_msg_tokens
 
@@ -54,25 +63,28 @@ def trim_history_to_token_limit(history, max_tokens=120000, model="gpt-4"):
 
     return trimmed
 
+
 class Agent:
     def __init__(self):
         self.history = []
         self.llm = GPTClient()
-    
-    def test(self):
-        return self.llm.run([{"role": "system", "content": "hello"}])
 
     def init_context(self, problem_desc: str, instructions: str, apis: str):
         """Initialize the context for the agent."""
 
         self.shell_api = self._filter_dict(apis, lambda k, _: "exec_shell" in k)
         self.submit_api = self._filter_dict(apis, lambda k, _: "submit" in k)
+        self.telemetry_apis = self._filter_dict(
+            apis, lambda k, _: "exec_shell" not in k and "submit" not in k
+        )
+
         stringify_apis = lambda apis: "\n\n".join(
             [f"{k}\n{v}" for k, v in apis.items()]
         )
 
-        self.system_message = DOCS_SHELL_ONLY.format(
+        self.system_message = DOCS.format(
             prob_desc=problem_desc,
+            telemetry_apis=stringify_apis(self.telemetry_apis),
             shell_api=stringify_apis(self.shell_api),
             submit_api=stringify_apis(self.submit_api),
         )
@@ -81,6 +93,13 @@ class Agent:
 
         self.history.append({"role": "system", "content": self.system_message})
         self.history.append({"role": "user", "content": self.task_message})
+
+    def get_extra_details(self):
+        extra_details = {"full_prompt": self.llm.get_extra_details()}
+
+        self.llm.clear_history()
+
+        return extra_details
 
     async def get_action(self, input) -> str:
         """Wrapper to interface the agent with OpsBench.
@@ -91,36 +110,68 @@ class Agent:
         Returns:
             str: The response from the agent.
         """
-        self.history.append({"role": "user", "content": input})
+        self.history.append({"role": "user", "content": self._add_instr(input)})
         trimmed_history = trim_history_to_token_limit(self.history)
         response = self.llm.run(trimmed_history)
-        print(f"===== Agent (GPT-4o-mini) ====\n{response}")
         self.history.append({"role": "assistant", "content": response[0]})
         return response[0]
 
     def _filter_dict(self, dictionary, filter_func):
         return {k: v for k, v in dictionary.items() if filter_func(k, v)}
 
+    def _add_instr(self, input):
+        return input + "\n\n" + RESP_INSTR
+
 
 if __name__ == "__main__":
-    # Load use_wandb from environment variable with a default of False
-    use_wandb = os.getenv("USE_WANDB", "false").lower() == "true"
-    
-    if use_wandb:
-        # Initialize wandb running
-        wandb.init(project="AIOpsLab", entity="sabuzakuk-epfl")
+    parser = argparse.ArgumentParser(description="AIOpsLab")
+    parser.add_argument("--resume-id", type=str, default=None, help="Resume ID")
+    parser.add_argument("--start-idx", type=int, default=0, help="Start index")
+    args = parser.parse_args()
 
     problems = ProblemRegistry().PROBLEM_REGISTRY
-    for pid in problems:
+
+    # Load use_wandb from environment variable with a default of False
+    use_wandb = os.getenv("USE_WANDB", "false").lower() == "true"
+
+    # Initialize wandb running
+    if use_wandb:
+        if args.resume_id is not None:
+            app = wandb.init(
+                project="AIOpsLab",
+                entity="sabuzakuk-epfl",
+                id=args.resume_id,
+                resume="allow",
+            )
+
+        else:
+            app = wandb.init(project="AIOpsLab", entity="sabuzakuk-epfl")
+
+    for idx, pid in enumerate(problems):
+        if "mitigation" in pid:
+            continue
+
+        if idx < args.start_idx:
+            continue
+
         agent = Agent()
-
         orchestrator = Orchestrator()
-        orchestrator.register_agent(agent, name="gpt-w-shell")
+        orchestrator.register_agent(agent, name="react")
 
-        problem_desc, instructs, apis = orchestrator.init_problem(pid)
-        agent.init_context(problem_desc, instructs, apis)
-        asyncio.run(orchestrator.start_problem(max_steps=30))
+        try:
+            problem_desc, instructs, apis = orchestrator.init_problem(pid)
+            agent.init_context(problem_desc, instructs, apis)
+
+            full_output = asyncio.run(orchestrator.start_problem(max_steps=30))
+            results = full_output.get("results", {})
+
+            filename = f"react_{pid}.json"
+            with open(filename, "w") as f:
+                json.dump(results, f, indent=2)
+
+        except Exception as e:
+            print(f"Error while running problem {pid}: {e}")
 
     if use_wandb:
-        # Finish the wandb run
+        app.alert(title="Run Completed", text="All problems have been run.")
         wandb.finish()

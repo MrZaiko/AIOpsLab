@@ -33,6 +33,10 @@ def in_tokens(trace: list[SessionItem]) -> int:
     return len(tokenizer.encode(user_steps))
 
 
+def count_tokens(trace: list[dict[str, str]]) -> int:
+    full_prompt = "".join([item["content"] for item in trace])
+    return len(tokenizer.encode(full_prompt))
+
 def is_exact_match(pred: int | str | list, target: int | str | list) -> bool:
     """Return True if the prediction is an exact match to the target."""
     return pred == target
