@@ -1,6 +1,6 @@
 """Naive ReAct client for AIOpsLab.
 
-Yao, S., Zhao, J., Yu, D., Du, N., Shafran, I., Narasimhan, K., & Cao, Y. (2022). 
+Yao, S., Zhao, J., Yu, D., Du, N., Shafran, I., Narasimhan, K., & Cao, Y. (2022).
 React: Synergizing reasoning and acting in language models. arXiv preprint arXiv:2210.03629.
 
 Code: https://github.com/ysymyth/ReAct
@@ -24,11 +24,13 @@ Thought: <your thought on the previous output>
 Action: <your action towards mitigating>
 """
 
+
 def count_message_tokens(message, enc):
     # Each message format adds ~4 tokens of overhead
     tokens = 4  # <|start|>role/name + content + <|end|>
     tokens += len(enc.encode(message.get("content", "")))
     return tokens
+
 
 def trim_history_to_token_limit(history, max_tokens=120000, model="gpt-4"):
     enc = tiktoken.encoding_for_model(model)
@@ -42,9 +44,11 @@ def trim_history_to_token_limit(history, max_tokens=120000, model="gpt-4"):
 
     if last_msg_tokens > max_tokens:
         # If even the last message is too big, truncate its content
-        truncated_content = enc.decode(enc.encode(last_msg["content"])[:max_tokens - 4])
+        truncated_content = enc.decode(
+            enc.encode(last_msg["content"])[: max_tokens - 4]
+        )
         return [{"role": last_msg["role"], "content": truncated_content}]
-    
+
     trimmed.insert(0, last_msg)
     total_tokens += last_msg_tokens
 
@@ -89,16 +93,12 @@ class Agent:
         self.history.append({"role": "system", "content": self.system_message})
         self.history.append({"role": "user", "content": self.task_message})
 
-
     def get_extra_details(self):
-        extra_details = {
-            "full_prompt": self.llm.get_extra_details()
-        }
+        extra_details = {"full_prompt": self.llm.get_extra_details()}
 
         self.llm.clear_history()
 
         return extra_details
-
 
     async def get_action(self, input) -> str:
         """Wrapper to interface the agent with OpsBench.
@@ -130,12 +130,14 @@ if __name__ == "__main__":
 
     if use_wandb:
         # Initialize wandb running
-        wandb.init(project="AIOpsLab", entity="sabuzakuk-epfl", id="yz9njbct", resume="allow")
+        wandb.init(
+            project="AIOpsLab", entity="sabuzakuk-epfl", id="yz9njbct", resume="allow"
+        )
 
     id = 0
 
     for idx, pid in enumerate(problems):
-        if "mitigation" in pid:
+        if "mitigation" in pid or idx == 63:
             continue
 
         break
