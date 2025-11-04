@@ -148,7 +148,7 @@ if __name__ == "__main__":
             app = wandb.init(project="AIOpsLab", entity="sabuzakuk-epfl")
 
     for idx, pid in enumerate(problems):
-        if "mitigation" in pid:
+        if "mitigation" in pid or idx == 63 or idx == 23:
             continue
 
         if idx < args.start_idx:

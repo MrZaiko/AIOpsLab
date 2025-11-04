@@ -38,7 +38,7 @@ class TaskActions:
                 logs = docker.get_logs(service)
             except Exception as e:
                 return "Error: Your service does not exist. Use docker to check."
-        
+
         else:
             kubectl = KubeCtl()
             try:
@@ -53,9 +53,11 @@ class TaskActions:
                         namespace, f"app.kubernetes.io/name={service}"
                     )
                 elif namespace == "default" and "wrk2-job" in service:
-                    user_service_pod = kubectl.get_pod_name(namespace, f"job-name=wrk2-job")
+                    user_service_pod = kubectl.get_pod_name(
+                        namespace, f"job-name=wrk2-job"
+                    )
                 else:
-                        raise Exception
+                    raise Exception
                 logs = kubectl.get_pod_logs(user_service_pod, namespace)
             except Exception as e:
                 return "Error: Your service/namespace does not exist. Use kubectl to check."
@@ -63,7 +65,7 @@ class TaskActions:
         print(logs)
         logs = "\n".join(logs.split("\n"))
 
-        return logs
+        return ""  # logs
 
     @staticmethod
     @action
@@ -122,7 +124,7 @@ class TaskActions:
         )
 
         return save_dir_str
-    
+
     @staticmethod
     @read
     def read_metrics(file_path: str) -> str:
@@ -260,4 +262,3 @@ class TaskActions:
         # except requests.RequestException as e:
         #     print(f"An error occurred: {e}")
         #     return []
-
