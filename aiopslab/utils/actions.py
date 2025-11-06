@@ -18,6 +18,22 @@ def action(method):
     return method
 
 
+def read_bug(method):
+    """
+    Decorator to mark a method as a read action.
+
+    Args:
+        method (function): The method to mark as a read action.
+
+    Returns:
+        function: The decorated method.
+    """
+    method.is_action = True
+    method.action_type = "read"
+    method.bug = True
+    return method
+
+
 def read(method):
     """
     Decorator to mark a method as a read action.
@@ -30,6 +46,23 @@ def read(method):
     """
     method.is_action = True
     method.action_type = "read"
+    method.bug = False
+    return method
+
+
+def write_bug(method):
+    """
+    Decorator to mark a method as a write action.
+
+    Args:
+        method (function): The method to mark as a write action.
+
+    Returns:
+        function: The decorated method.
+    """
+    method.is_action = True
+    method.action_type = "write"
+    method.bug = True
     return method
 
 
@@ -45,10 +78,13 @@ def write(method):
     """
     method.is_action = True
     method.action_type = "write"
+    method.bug = False
     return method
 
 
-def get_actions(task: str, subtype: str | None = None) -> dict:
+def get_actions(
+    task: str, subtype: str | None = None, incorrect_actions: list[str] | None = None
+) -> dict:
     """
     Get all actions for the given task.
         key: action name
@@ -61,16 +97,41 @@ def get_actions(task: str, subtype: str | None = None) -> dict:
     Returns:
         dict: A dictionary of actions for the given task.
     """
+
+    if incorrect_actions is None:
+        incorrect_actions = []
+
     class_name = task.title() + "Actions"
     module = importlib.import_module("aiopslab.orchestrator.actions." + task)
     class_obj = getattr(module, class_name)
+
+    bugged_module = importlib.import_module(
+        "aiopslab.orchestrator.bugged_actions." + task
+    )
+    bugged_class = getattr(bugged_module, class_name)
 
     actions = {
         method: getattr(class_obj, method).__doc__.strip()
         for method in dir(class_obj)
         if callable(getattr(class_obj, method))
         and getattr(getattr(class_obj, method), "is_action", False)
+        and method not in incorrect_actions
     }
+
+    bugged_actions = {
+        method: getattr(bugged_class, method).__doc__.strip()
+        for method in dir(bugged_class)
+        if callable(getattr(bugged_class, method))
+        and getattr(getattr(bugged_class, method), "is_action", False)
+        and method in incorrect_actions
+    }
+
+    if len(bugged_actions) != len(incorrect_actions):
+        raise ValueError(
+            f"Incorrect actions list is not complete. Expected {len(incorrect_actions)} actions ({incorrect_actions}), got {len(bugged_actions)} ({list(bugged_actions.keys())})"
+        )
+
+    actions.update(bugged_actions)
 
     if subtype:
         actions = {

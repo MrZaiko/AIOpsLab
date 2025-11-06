@@ -31,7 +31,11 @@ class Orchestrator:
         self.use_wandb = os.getenv("USE_WANDB", "false").lower() == "true"
         self.results_dir = results_dir
 
-    def init_problem(self, problem_id: str):
+    def init_problem(
+        self,
+        problem_id: str,
+        incorrect_actions: list[str] | None = None,
+    ):
         """Initialize a problem instance for the agent to solve.
 
         Args:
@@ -40,6 +44,9 @@ class Orchestrator:
         Returns:
             tuple: A tuple containing the problem description, task message, and session object.
         """
+        if incorrect_actions is None:
+            incorrect_actions = []
+
         # Start timer
         self.execution_start_time = time.time()
 
@@ -58,7 +65,7 @@ class Orchestrator:
                 "kubectl apply -f https://openebs.github.io/charts/openebs-operator.yaml"
             )
             self.kubectl.exec_command(
-                "kubectl patch storageclass openebs-hostpath -p '{\"metadata\": {\"annotations\":{\"storageclass.kubernetes.io/is-default-class\":\"true\"}}}'"
+                'kubectl patch storageclass openebs-hostpath -p \'{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}\''
             )
             self.kubectl.wait_for_ready("openebs")
             print("OpenEBS setup completed.")
@@ -86,7 +93,7 @@ class Orchestrator:
 
         task_desc = prob.get_task_description()
         instructions = prob.get_instructions()
-        actions = prob.get_available_actions()
+        actions = prob.get_available_actions(incorrect_actions)
 
         return task_desc, instructions, actions
 
@@ -168,7 +175,9 @@ class Orchestrator:
                 if env_response == SubmissionStatus.VALID_SUBMISSION:
                     break
                 elif env_response == SubmissionStatus.INVALID_SUBMISSION:
-                    raise ValueError("Invalid submission!")  # TODO (@manish): ask to retry?
+                    raise ValueError(
+                        "Invalid submission!"
+                    )  # TODO (@manish): ask to retry?
 
                 action_instr = env_response + "\n" + "Please take the next action"
         except Exception as e:
@@ -193,23 +202,26 @@ class Orchestrator:
 
         self.session.set_results(results)
         self.session.to_json()
-        if self.use_wandb:
-            self.session.to_wandb()
+
+        # if self.use_wandb:
+        # self.session.to_wandb()
 
         with CriticalSection():
             self.session.problem.recover_fault()
             atexit.unregister(exit_cleanup_fault)
-            
+
         # Beyond recovering from fault,
         # I feel sometimes it is safer to delete the whole namespace.
         # But this will take more time.
         # if not self.session.problem.sys_status_after_recovery():
         self.session.problem.app.cleanup()
-        
+
         if self.session.problem.namespace != "docker":
             self.prometheus.teardown()
             print("Uninstalling OpenEBS...")
-            self.kubectl.exec_command("kubectl delete sc openebs-hostpath openebs-device --ignore-not-found")
+            self.kubectl.exec_command(
+                "kubectl delete sc openebs-hostpath openebs-device --ignore-not-found"
+            )
             self.kubectl.exec_command(
                 "kubectl delete -f https://openebs.github.io/charts/openebs-operator.yaml"
             )
@@ -229,6 +241,7 @@ class Orchestrator:
             "final_state": env_response,
             "results": results,
             "framework_overhead": framework_overhead,
+            "session": self.session.to_dict(),
         }
 
 

@@ -40,11 +40,11 @@ class MitigationTask(Task):
             ```\n<API_NAME>(<API_PARAM1>, <API_PARAM2> ...)\n```
 
             For instance, if you want to list files in current directory, your response must be exactly:
-            
+
             ```\nexec_shell("ls -l")\n```
 
             Once your solution is complete and ready for evaluation, you must call:
-            
+
             ```\nsubmit()\n```
 
             Note:
@@ -60,8 +60,8 @@ class MitigationTask(Task):
     def get_instructions(self):
         return textwrap.dedent(self.instructions)
 
-    def get_available_actions(self):
-        return get_actions(task="mitigation")
+    def get_available_actions(self, incorrect_actions):
+        return get_actions(task="mitigation", incorrect_actions=incorrect_actions)
 
     def perform_action(self, action_name, *args, **kwargs):
         action_method = getattr(self.actions, action_name, None)

@@ -6,7 +6,7 @@
 import os
 import pandas as pd
 from datetime import datetime, timedelta
-from aiopslab.utils.actions import action, read, write
+from aiopslab.utils.actions import action, read, read_bug, write
 from aiopslab.service.kubectl import KubeCtl
 from aiopslab.service.dock import Docker
 from aiopslab.service.shell import Shell
@@ -15,16 +15,17 @@ from aiopslab.service.shell import Shell
 from aiopslab.observer.metric_api import PrometheusAPI
 from aiopslab.observer.trace_api import TraceAPI
 
-from aiopslab.orchestrator.actions.log_deduplication import greedy_compress_lines 
+from aiopslab.orchestrator.actions.log_deduplication import greedy_compress_lines
 
 import re
 
 LOG_COMMAND_PATTERN: str = (
     r"\b(?:"
     r"kubectl\s+(?:logs|get\s+events|describe|get\s+\S+\s+-w)"  # logs/events/describe/watch
-    r"|docker\s+(?:logs|events)"                               # docker logs/events
+    r"|docker\s+(?:logs|events)"  # docker logs/events
     r")\b(?:[^\n]*)"
 )
+
 
 class TaskActions:
     """Base class for task actions."""
@@ -72,10 +73,10 @@ class TaskActions:
             except Exception as e:
                 return "Error: Your service/namespace does not exist. Use kubectl to check."
 
-        logs = greedy_compress_lines(logs) 
+        logs = greedy_compress_lines(logs)
         print(logs)
 
-        return ""  # logs
+        return logs
 
     @staticmethod
     @action
@@ -103,7 +104,7 @@ class TaskActions:
             if pattern in command:
                 return error
 
-        result = Shell.exec(command) 
+        result = Shell.exec(command)
 
         if re.search(LOG_COMMAND_PATTERN, command):
             result = greedy_compress_lines(result)

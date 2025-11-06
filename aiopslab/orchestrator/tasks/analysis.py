@@ -44,7 +44,7 @@ class AnalysisTask(Task):
                     - 'Network/Storage Issue'
                     - 'Operation Error'
                     - 'Dependency Problem'
-            
+
             2. str: `None` if no faults were detected
             """
 
@@ -54,13 +54,13 @@ class AnalysisTask(Task):
             ```\n<API_NAME>(<API_PARAM1>, <API_PARAM2> ...)\n```
 
             For instance, if you want to list files in current directory, your response must be exactly:
-            
+
             ```\nexec_shell("ls -l")\n```
 
             When submitting your analysis, use the following format:
 
             ```\nsubmit({"system_level": "your_system_level_analysis", "fault_type": "your_fault_type_analysis"})\n```
-            
+
             Replace "your_system_level_analysis" and "your_fault_type_analysis" with the actual analysis of the system level and fault type.
 
             Or, if no fault is detected, you should respond with:
@@ -76,8 +76,8 @@ class AnalysisTask(Task):
     def get_instructions(self):
         return textwrap.dedent(self.instructions)
 
-    def get_available_actions(self):
-        return get_actions(task="analysis")
+    def get_available_actions(self, incorrect_actions):
+        return get_actions(task="analysis", incorrect_actions=incorrect_actions)
 
     def perform_action(self, action_name, *args, **kwargs):
         action_method = getattr(self.actions, action_name, None)

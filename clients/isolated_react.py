@@ -127,9 +127,19 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="AIOpsLab")
     parser.add_argument("--resume-id", type=str, default=None, help="Resume ID")
     parser.add_argument("--start-idx", type=int, default=0, help="Start index")
+    parser.add_argument("--stop-idx", type=int, default=-1, help="Stop index")
+    parser.add_argument(
+        "--incorrect-actions",
+        type=list,
+        nargs="+",
+        default=[],
+        help="Incorrect actions",
+    )
     args = parser.parse_args()
 
     problems = ProblemRegistry().PROBLEM_REGISTRY
+    if args.stop_idx == -1:
+        args.stop_idx = len(problems)
 
     # Load use_wandb from environment variable with a default of False
     use_wandb = os.getenv("USE_WANDB", "false").lower() == "true"
@@ -148,29 +158,66 @@ if __name__ == "__main__":
             app = wandb.init(project="AIOpsLab", entity="sabuzakuk-epfl")
 
     for idx, pid in enumerate(problems):
-        if "mitigation" in pid or idx == 63 or idx == 23:
+        if "mitigation" in pid:
             continue
 
         if idx < args.start_idx:
             continue
 
-        agent = Agent()
-        orchestrator = Orchestrator()
-        orchestrator.register_agent(agent, name="react")
+        if idx >= args.stop_idx:
+            break
 
-        try:
-            problem_desc, instructs, apis = orchestrator.init_problem(pid)
-            agent.init_context(problem_desc, instructs, apis)
+        for i in range(2):
+            agent = Agent()
+            orchestrator = Orchestrator()
+            orchestrator.register_agent(agent, name="react")
 
-            full_output = asyncio.run(orchestrator.start_problem(max_steps=30))
-            results = full_output.get("results", {})
+            try:
+                if i == 0:
+                    problem_desc, instructs, apis = orchestrator.init_problem(pid)
+                else:
+                    problem_desc, instructs, apis = orchestrator.init_problem(
+                        pid, incorrect_actions=args.incorrect_actions
+                    )
 
-            filename = f"react_{pid}.json"
-            with open(filename, "w") as f:
-                json.dump(results, f, indent=2)
+                agent.init_context(problem_desc, instructs, apis)
 
-        except Exception as e:
-            print(f"Error while running problem {pid}: {e}")
+                full_output = asyncio.run(orchestrator.start_problem(max_steps=30))
+
+                session_dict: dict[str, Any] = full_output["session"]
+
+                if "localization" in session_dict["problem_id"].lower():
+                    session_dict["task_accuracy"] = (
+                        "Correct"
+                        if session_dict["results.Localization Accuracy"] == 100
+                        else "Incorrect"
+                    )
+                    session_dict["type"] = "localization"
+
+                elif "detection" in session_dict["problem_id"].lower():
+                    session_dict["task_accuracy"] = (
+                        "Correct"
+                        if session_dict["results.Detection Accuracy"] == "Correct"
+                        else "Incorrect"
+                    )
+                    session_dict["type"] = "detection"
+
+                elif "analysis" in session_dict["problem_id"].lower():
+                    session_dict["task_accuracy"] = (
+                        "Correct"
+                        if session_dict["results.fault_type_correct"] is True
+                        else "Incorrect"
+                    )
+                    session_dict["type"] = "analysis"
+
+                session_dict["incorrect_tool"] = (
+                    "none" if i == 0 else f"{args.incorrect_actions}"
+                )
+
+                wandb.log(session_dict)
+
+            except Exception as e:
+                print(f"Error while running problem {pid}: {e}")
 
     if use_wandb:
         app.alert(title="Run Completed", text="All problems have been run.")

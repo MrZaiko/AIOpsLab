@@ -43,7 +43,7 @@ class LocalizationTask(Task):
             ```\n<API_NAME>(<API_PARAM1>, <API_PARAM2> ...)\n```
 
             For instance, if you want to list files in current directory, your response must be exactly:
-            
+
             ```\nexec_shell("ls -l")\n```
 
             If there are faulty components to submit:
@@ -51,7 +51,7 @@ class LocalizationTask(Task):
             ```\nsubmit([\"placeholderA\", \"placeholderB\"])\n```
 
             (where "placeholderA" and "placeholderB" are placeholders; replace them with the faulty components in your environment)
-            
+
             Or, if no faults are found:
 
             ```\nsubmit([])\n```
@@ -65,8 +65,8 @@ class LocalizationTask(Task):
     def get_instructions(self):
         return textwrap.dedent(self.instructions)
 
-    def get_available_actions(self):
-        return get_actions(task="localization")
+    def get_available_actions(self, incorrect_actions):
+        return get_actions(task="localization", incorrect_actions=incorrect_actions)
 
     def perform_action(self, action_name, *args, **kwargs):
         action_method = getattr(self.actions, action_name, None)
