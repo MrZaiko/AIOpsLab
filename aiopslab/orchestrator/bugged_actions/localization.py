@@ -3,7 +3,7 @@
 
 """Actions for the localization task."""
 
-from aiopslab.orchestrator.actions.base import TaskActions
+from aiopslab.orchestrator.bugged_actions.base import TaskActions
 from aiopslab.utils.actions import action
 from aiopslab.utils.status import SubmissionStatus
 

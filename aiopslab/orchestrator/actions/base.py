@@ -4,20 +4,19 @@
 """Base class for task actions."""
 
 import os
-import pandas as pd
+import re
 from datetime import datetime, timedelta
-from aiopslab.utils.actions import action, read, read_bug, write
-from aiopslab.service.kubectl import KubeCtl
-from aiopslab.service.dock import Docker
-from aiopslab.service.shell import Shell
+
+import pandas as pd
 
 # from aiopslab.observer import initialize_pod_and_service_lists
 from aiopslab.observer.metric_api import PrometheusAPI
 from aiopslab.observer.trace_api import TraceAPI
-
 from aiopslab.orchestrator.actions.log_deduplication import greedy_compress_lines
-
-import re
+from aiopslab.service.dock import Docker
+from aiopslab.service.kubectl import KubeCtl
+from aiopslab.service.shell import Shell
+from aiopslab.utils.actions import action, read, read_bug, write
 
 LOG_COMMAND_PATTERN: str = (
     r"\b(?:"
@@ -25,6 +24,10 @@ LOG_COMMAND_PATTERN: str = (
     r"|docker\s+(?:logs|events)"  # docker logs/events
     r")\b(?:[^\n]*)"
 )
+
+generating_for = None
+tool_history = {}
+MAX_TOOLS_PER_GOAL = 2
 
 
 class TaskActions:
@@ -217,66 +220,103 @@ class TaskActions:
             return f"Failed to read traces: {str(e)}"
 
     @staticmethod
-    # @read
-    # NOTE: disabled for now, since seems like a cheat for code changes
-    def get_microservice_repo_diff(start: int, end: int, token=None) -> list[dict]:
-        pass
-        # """
-        # Fetch the latest commits and their diffs from a GitHub repository.
+    @read
+    def get_goals() -> str:
+        """
+        Reads and returns the registered goals in the tool history
 
-        # Args:
-        #     start (int): The start timestamp.
-        #     end (int): The end timestamp.
-        #     token: GitHub personal access token for authenticated requests (optional).
+        Returns:
+            str: The list of goals
+        """
 
-        # Returns:
-        #     A list of commit messages and other details.
-        # """
-        # api_url = f"https://api.github.com/repos/owner/repo/commits"
-        # headers = {}
+        return "The goals currently in the history are:\n" + ", ".join(
+            tool_history.keys()
+        )
 
-        # if token:
-        #     headers["Authorization"] = f"token {token}"
+    @staticmethod
+    @read
+    def get_command_goal(goal) -> str:
+        """
+        Reads and returns the commands and result related to the specified goal.
 
-        # try:
-        #     response = requests.get(api_url, headers=headers)
-        #     response.raise_for_status()  # Raise an error for bad responses
-        #     commits = response.json()
+        Args:
+            goal (str): The name of the goal.
 
-        #     for commit in commits:
-        #         sha = commit["sha"]
-        #         # Fetch diff details for each commit
-        #         diff_url = f"https://api.github.com/repos/{owner}/{repo}/commits/{sha}"
-        #         diff_response = requests.get(diff_url, headers=headers)
-        #         diff_response.raise_for_status()
-        #         diff_data = diff_response.json()
+        Returns:
+            str: The list of goals
+        """
 
-        #         # Extract relevant commit information and diff
-        #         commit_info = {
-        #             "sha": sha,
-        #             "message": commit["commit"]["message"],
-        #             "author": commit["commit"]["author"]["name"],
-        #             "date": commit["commit"]["author"]["date"],
-        #             "files": [],
-        #         }
+        if goal not in tool_history:
+            return f"error: Goal '{goal}' not found in tool history."
 
-        #         # Process the diff data
-        #         for file in diff_data["files"]:
-        #             commit_info["files"].append(
-        #                 {
-        #                     "filename": file["filename"],
-        #                     "status": file["status"],
-        #                     "additions": file["additions"],
-        #                     "deletions": file["deletions"],
-        #                     "changes": file["changes"],
-        #                     "patch": file["patch"],
-        #                 }
-        #             )
+        commands = tool_history[goal]
 
-        #         commit_details.append(commit_info)
+        return "Command -> Result:\n\n" + "\n".join(
+            f"{c['command']} -> {c['result']}" for c in commands
+        )
 
-        #     return commit_details
+    @staticmethod
+    @read
+    def add_goal(goal) -> str:
+        """
+        Add an entry for the specified goal in the goal history. A goal must be a small (3 to 5 words) string describing the goal of the commands linked to it. For example, if you want to generate commands to get logs from service_name, the goal should be named: get_logs_service_name.
 
-        # except requests.RequestException as e:
-        #     print(f"An error occurred: {e}")
-        #     return []
+        Args:
+            goal (str): The name of the goal.
+
+        Returns:
+            str: if the operation was successfully performed
+        """
+
+        if goal in tool_history:
+            return f"error: Goal '{goal}' already exists in tool history."
+
+        tool_history[goal] = []
+
+        return f"Goal '{goal}' added successfully."
+
+    @staticmethod
+    @read
+    def ask_generator(goal, task) -> str:
+        """
+        Ask a generator agent to generate a tool call to perform the specified task.
+
+        Args:
+            goal (str): The name of the goal in the tool history.
+            task (str): The action to generate the tool call for. For example, if you want to gather logs from a service, this argument shoiuld be: "get the logs from service_name"
+
+        Returns:
+            str: if the operation was successfully performed
+        """
+
+        global generating_for
+
+        if goal not in tool_history:
+            return f"error: Goal '{goal}' not found in tool history."
+
+        if len(tool_history[goal]) >= MAX_TOOLS_PER_GOAL:
+            return f"error: Maximum number of tool_calls ({MAX_TOOLS_PER_GOAL}) reached for goal '{goal}'"
+
+        generating_for = goal
+
+        return (
+            "\n".join(f"{c['command']}" for c in tool_history[goal]) + "---" + f"{task}"
+        )
+
+    @staticmethod
+    @read
+    def submit_generated_tool(command, result) -> str:
+        """
+        Submit the generated tool call alongside its result.
+
+        Args:
+            command (str): The generated tool call
+            result (str): The observation generated by the tool call. This needs to be the exact return value from the tool call (not a summary, not only a subset)
+
+        Returns:
+            str: if the operation was successfully performed
+        """
+
+        tool_history[generating_for].append({"command": command, "result": result})
+
+        return f"Added generated command to goal: {generating_for}"

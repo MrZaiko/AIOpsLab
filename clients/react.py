@@ -12,8 +12,8 @@ import json
 import os
 
 import tiktoken
-import wandb
 
+import wandb
 from aiopslab.orchestrator import Orchestrator
 from aiopslab.orchestrator.problems.registry import ProblemRegistry
 from clients.utils.llm import GPTClient
@@ -139,8 +139,6 @@ if __name__ == "__main__":
     for idx, pid in enumerate(problems):
         if "mitigation" in pid or idx == 63:
             continue
-
-        break
 
         agent = Agent()
         orchestrator = Orchestrator()

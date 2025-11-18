@@ -23,7 +23,6 @@ Finally, you will submit your solution for this task using the following API:
 
 {submit_api}
 
-
 At each turn think step-by-step and respond with:
 Thought: <your thought>
 Action: <your action>

@@ -123,15 +123,15 @@ def get_actions(
         for method in dir(bugged_class)
         if callable(getattr(bugged_class, method))
         and getattr(getattr(bugged_class, method), "is_action", False)
-        and method in incorrect_actions
     }
 
-    if len(bugged_actions) != len(incorrect_actions):
-        raise ValueError(
-            f"Incorrect actions list is not complete. Expected {len(incorrect_actions)} actions ({incorrect_actions}), got {len(bugged_actions)} ({list(bugged_actions.keys())})"
-        )
+    for bugs in incorrect_actions:
+        if bugs not in bugged_actions.keys():
+            raise ValueError(f"Action {bugs} is not in bugged_actions")
 
-    actions.update(bugged_actions)
+        actions[bugs] = bugged_actions[bugs]
+
+        print(f"Replaced action {bugs} with bugged version")
 
     if subtype:
         actions = {
@@ -139,5 +139,7 @@ def get_actions(
             for method, doc in actions.items()
             if getattr(getattr(class_obj, method), "action_type", None) == subtype
         }
+
+    print("DONE")
 
     return actions
